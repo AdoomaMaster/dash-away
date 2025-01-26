@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dash Away</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #6e45e2, #88d3ce);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: red;
+            font-size: 2rem;
+            font-weight: 500;
+            display: none;
+        }
+
+        .score {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 32px;
+            color: white;
+            font-weight: bold;
+            text-shadow: #000;
+            z-index: 10;
+        }
+
+        .high-score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 28px;
+            color: yellow;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px #000;
+        }
+
+        .round-display {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 28px;
+            color: yellow;
+            font-weight: bold;
+            text-shadow: #000;
+            z-index: 10;
+            animation: fade-in 1s ease-in-out;
+        }
+
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .controls-container {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .mobile-button {
+            width: 70px;
+            height: 70px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .mobile-button.laser {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+        }
+
+        .mobile-button:active {
+            background: rgba(200, 200, 200, 0.9);
+        }
+
+        .pause-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 60px;
+            height: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.8);
+            color: #333;
+            text-align: center;
+            line-height: 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease, transform 0.2s ease;
+        }
+
+        .pause-button:hover {
+            background: rgba(200, 200, 200, 0.9);
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="game-over" id="gameOverScreen">
+        <p>Game Over</p>
+        <p>Your Score: <span id="finalScore">0</span></p>
+        <p>Press any button to restart</p>
+    </div>
+    <div class="score" id="scoreDisplay">1</div>
+    <div class="high-score" id="highScoreDisplay">High Score: 0</div>
+    <div class="round-display" id="roundDisplay">Round 1</div>
+    <div class="pause-button" id="pauseButton">Pause</div>
+    <div class="controls-container">
+        <div class="mobile-button" id="leftButton">◀</div>
+        <div class="mobile-button" id="rightButton">▶</div>
+        <div class="mobile-button" id="jumpButton">⬆</div>
+    </div>
+    <div class="mobile-button laser" id="laserButton">🔫</div>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const laserButton = document.getElementById("laserButton");
+        const scoreDisplay = document.getElementById("scoreDisplay");
+        const highScoreDisplay = document.getElementById("highScoreDisplay");
+        const roundDisplay = document.getElementById("roundDisplay");
+        const gameOverScreen = document.getElementById("gameOverScreen");
+        const finalScore = document.getElementById("finalScore");
+        const leftButton = document.getElementById("leftButton");
+        const rightButton = document.getElementById("rightButton");
+        const jumpButton = document.getElementById("jumpButton");
+        const pauseButton = document.getElementById("pauseButton");
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let highScore = 0;
+        let isPaused = false;
+
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 80,
+            width: 50,
+            height: 50,
+            color: "#c60000",
+            dx: 0,
+            dy: 0,
+            gravity: 0.5,
+            jumpPower: -10,
+            onGround: true,
+            isJumping: false
+        };
+
+        const lasers = [];
+        const obstacles = [];
+        const enemies = [];
+        let score = 0;
+        let round = 1;
+        let isGameOver = false;
+        let canShootLaser = true;
+
+        function restartGame() {
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 60;
+            player.dx = 0;
+            player.dy = 0;
+            player.onGround = true;
+            lasers.length = 0;
+            obstacles.length = 0;
+            enemies.length = 0;
+            score = 0;
+            round = 1;
+            isGameOver = false;
+            scoreDisplay.textContent = score;
+            roundDisplay.textContent = `Round ${round}`;
+            gameOverScreen.style.display = "none";
+            update();
+        }
+
+        function handleRestart(event) {
+            if (isGameOver) {
+                restartGame();
+                window.removeEventListener("keydown", handleRestart);
+                window.removeEventListener("mousedown", handleRestart);
+            }
+        }
+
+        function shootLaser() {
+            if (!canShootLaser) return;
+
+            lasers.push({
+                x: player.x + player.width,
+                y: player.y + player.height / 2 - 2.5,
+                width: 20,
+                height: 5,
+                color: "#ff0000",
+                speed: 8
+            });
+
+            canShootLaser = false;
+            setTimeout(() => {
+                canShootLaser = true;
+            }, 500);
+        }
+
+        function drawRect(obj) {
+            ctx.fillStyle = obj.color;
+            ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
+        }
+
+        function updateLasers() {
+            lasers.forEach((laser, index) => {
+                laser.x += laser.speed;
+                if (laser.x > canvas.width) lasers.splice(index, 1);
+                drawRect(laser);
+
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (
+                        laser.x < enemy.x + enemy.width &&
+                        laser.x + laser.width > enemy.x &&
+                        laser.y < enemy.y + enemy.height &&
+                        laser.y + laser.height > enemy.y
+                    ) {
+                        enemies.splice(enemyIndex, 1);
+                        lasers.splice(index, 1);
+                        score += 5;
+                    }
+                });
+            });
+        }
+
+        function spawnObstacle() {
+            obstacles.push({
+                x: canvas.width,
+                y: canvas.height - 146,  // Set obstacles just above the new floor
+                width: 20,
+                height: 50,
+                color: "#0cc700",
+                speed: 3 + round
+            });
+        }
+
+        function spawnEnemy() {
+            enemies.push({
+                x: canvas.width,
+                y: canvas.height - 200,  // Place enemies just above the floor
+                width: 37,
+                height: 40,
+                color: "#733d00",
+                speed: 2 + round
+            });
+        }
+
+        function updateObstacles() {
+            obstacles.forEach((obstacle, index) => {
+                obstacle.x -= obstacle.speed;
+                if (obstacle.x + obstacle.width < 0) {
+                    obstacles.splice(index, 1);
+                    score++;
+                }
+                drawRect(obstacle);
+            });
+        }
+
+        function updateEnemies() {
+            enemies.forEach((enemy, index) => {
+                enemy.x -= enemy.speed;
+                if (enemy.x + enemy.width < 0) enemies.splice(index, 1);
+                drawRect(enemy);
+            });
+        }
+
+        function checkGameOver() {
+            obstacles.forEach((obstacle) => {
+                if (
+                    player.x < obstacle.x + obstacle.width &&
+                    player.x + player.width > obstacle.x &&
+                    player.y < obstacle.y + obstacle.height &&
+                    player.y + player.height > obstacle.y
+                ) {
+                    isGameOver = true;
+                }
+            });
+
+            enemies.forEach((enemy) => {
+                if (
+                    player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y
+                ) {
+                    isGameOver = true;
+                }
+            });
+
+            if (isGameOver) {
+                if (score > highScore) highScore = score;
+                highScoreDisplay.textContent = `High Score: ${highScore}`;
+                finalScore.textContent = score;
+                gameOverScreen.style.display = "block";
+                window.addEventListener("keydown", handleRestart);
+                window.addEventListener("mousedown", handleRestart);
+            }
+        }
+
+        function update() {
+            if (isGameOver || isPaused) return;
+
+            player.dy += player.gravity;
+            if (player.y + player.height + player.dy > canvas.height - 100) {
+                player.dy = 0;
+                player.y = canvas.height - player.height - 100;  // Position player just above the floor
+                player.onGround = true;
+            }
+            player.x += player.dx;
+            player.y += player.dy;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawRect(player);
+            updateObstacles();
+            updateEnemies();
+            updateLasers();
+            scoreDisplay.textContent = score;
+
+            if (score >= round * 50) {
+                round++;
+                roundDisplay.textContent = `Round ${round}`;
+                spawnObstacle();
+                spawnEnemy();
+            }
+
+            // Draw a thinner floor just above the control buttons
+            const floorHeight = 30;  // Reduced the floor height to make it thinner
+            const floorY = canvas.height - floorHeight - 70;  // Position the floor
+            ctx.fillStyle = "#333";
+            ctx.fillRect(0, floorY, canvas.width, floorHeight);
+
+            checkGameOver();
+            requestAnimationFrame(update);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            pauseButton.textContent = isPaused ? "Resume" : "Pause";
+            if (!isPaused) update();
+        }
+
+        update();
+
+        setInterval(spawnObstacle, 2000);
+        setInterval(spawnEnemy, 5000);
+
+        function setMovement(button, direction) {
+            button.addEventListener("mousedown", () => (player.dx = direction));
+            button.addEventListener("mouseup", () => (player.dx = 0));
+            button.addEventListener("touchstart", () => (player.dx = direction));
+            button.addEventListener("touchend", () => (player.dx = 0));
+        }
+
+        setMovement(leftButton, -5);
+        setMovement(rightButton, 5);
+
+        jumpButton.addEventListener("mousedown", () => {
+            if (player.onGround) {
+                player.dy = player.jumpPower;
+                player.onGround = false;
+            }
+        });
+        jumpButton.addEventListener("touchstart", () => {
+            if (player.onGround) {
+                player.dy = player.jumpPower;
+                player.onGround = false;
+            }
+        });
+
+        laserButton.addEventListener("mousedown", shootLaser);
+        laserButton.addEventListener("touchstart", shootLaser);
+
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "a") player.dx = -5;
+            if (e.key === "d") player.dx = 5;
+            if ((e.key === "w" || e.key === " ") && player.onGround) {
+                player.dy = player.jumpPower;
+                player.onGround = false;
+            }
+            if (e.key === "e") shootLaser();
+            if (e.key === "p") togglePause();
+        });
+
+        window.addEventListener("keyup", (e) => {
+            if (e.key === "a" || e.key === "d") player.dx = 0;
+        });
+
+        pauseButton.addEventListener("click", togglePause);
+    </script>
+</body>
+</html>
